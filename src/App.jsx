@@ -93,7 +93,7 @@ function parseJSON(text) {
 }
 
 const ANALYST_PERSONA =
-  "אתה Melo, אנליסט השקעות AI מתקדם בתוך אפליקציית THESIS. " +
+  "אתה Theo, אנליסט השקעות AI מתקדם בתוך אפליקציית THESIS. " +
   "אתה אנליטי, ספקן, אובייקטיבי, מדויק, ישיר ומבוסס נתונים. " +
   "אתה לא מסכים אוטומטית עם המשתמש; אם רעיון חלש אתה אומר זאת בפירוש ומסביר למה. " +
   "אם חסרים נתונים אמינים אתה אומר 'אין מספיק נתונים אמינים כדי להגיע למסקנה' במקום להמציא. " +
@@ -260,6 +260,135 @@ function Splash({ onStart }) {
 }
 
 /* =============================== MARKET =================================== */
+/* --- candlestick detail: real OHLC candles, switchable timeframe, tap a candle --- */
+function CandleDetail({ ins, provider, onClose }) {
+  const [tfIdx, setTfIdx] = useState(4); // default: יום
+  const [candles, setCandles] = useState(null);
+  const [status, setStatus] = useState("loading");
+  const [err, setErr] = useState("");
+  const [sel, setSel] = useState(null);
+
+  const load = useCallback(async () => {
+    setStatus("loading"); setErr(""); setSel(null);
+    const t = TIMEFRAMES[tfIdx];
+    try {
+      const d = await provider.timeSeries(ins.sym, t.iv, t.n);
+      const vals = (d.values || []).map((v) => ({
+        t: v.datetime, o: +v.open, h: +v.high, l: +v.low, c: +v.close,
+      })).filter((v) => isFinite(v.o) && isFinite(v.c) && isFinite(v.h) && isFinite(v.l)).reverse();
+      if (!vals.length) { setStatus("nodata"); return; }
+      setCandles(vals); setStatus("ok");
+    } catch (e) { setErr(e.message); setStatus("error"); }
+  }, [ins.sym, tfIdx, provider]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const W = 360, H = 230, padT = 8, padB = 16, padR = 46;
+  let svg = null, head = null;
+  if (status === "ok" && candles) {
+    const n = candles.length;
+    const hi = Math.max(...candles.map((c) => c.h));
+    const lo = Math.min(...candles.map((c) => c.l));
+    const span = (hi - lo) || 1;
+    const plotW = W - padR, plotH = H - padT - padB;
+    const y = (p) => padT + ((hi - p) / span) * plotH;
+    const slot = plotW / n;
+    const bodyW = Math.max(1, Math.min(slot * 0.65, 9));
+    const shown = sel != null ? candles[sel] : candles[n - 1];
+    const chg = ((candles[n - 1].c / candles[0].o) - 1) * 100;
+    const up = chg >= 0;
+    head = (
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <span style={{ fontSize: 24, fontFamily: MONO, color: C.text }}>
+            {candles[n - 1].c.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </span>
+          <span style={{ fontSize: 14, fontFamily: MONO, color: up ? C.green : C.red }}>
+            {up ? "+" : ""}{chg.toFixed(2)}%
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 12, marginTop: 6, fontFamily: MONO, fontSize: 11, color: C.mut }}>
+          <span>O {shown.o.toFixed(2)}</span>
+          <span style={{ color: C.teal }}>H {shown.h.toFixed(2)}</span>
+          <span style={{ color: C.red }}>L {shown.l.toFixed(2)}</span>
+          <span>C {shown.c.toFixed(2)}</span>
+        </div>
+        {sel != null && <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO, marginTop: 3 }}>{shown.t}</div>}
+      </div>
+    );
+    svg = (
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+        {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
+          const p = hi - f * span, yy = padT + f * plotH;
+          return (
+            <g key={i}>
+              <line x1={0} y1={yy} x2={plotW} y2={yy} stroke={C.lineSoft} strokeWidth="0.5" />
+              <text x={plotW + 4} y={yy + 3} fill={C.mut2} fontSize="8" fontFamily={MONO}>
+                {p.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </text>
+            </g>
+          );
+        })}
+        {candles.map((c, i) => {
+          const cx = i * slot + slot / 2, isUp = c.c >= c.o, col = isUp ? C.green : C.red;
+          const top = Math.min(y(c.o), y(c.c)), hgt = Math.max(1, Math.abs(y(c.c) - y(c.o)));
+          return (
+            <g key={i}>
+              <line x1={cx} y1={y(c.h)} x2={cx} y2={y(c.l)} stroke={col} strokeWidth="1" />
+              <rect x={cx - bodyW / 2} y={top} width={bodyW} height={hgt} fill={col} />
+            </g>
+          );
+        })}
+        {sel != null && (
+          <line x1={sel * slot + slot / 2} y1={0} x2={sel * slot + slot / 2} y2={H - padB}
+            stroke={C.blueHi} strokeWidth="0.6" strokeDasharray="2 2" />
+        )}
+        {candles.map((c, i) => (
+          <rect key={"o" + i} x={i * slot} y={0} width={slot} height={H} fill="transparent"
+            onClick={() => setSel(i)} style={{ cursor: "pointer" }} />
+        ))}
+      </svg>
+    );
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: C.bg, zIndex: 60, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.lineSoft}`, display: "flex",
+        alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{ins.name}</div>
+          <div style={{ fontSize: 11, color: C.mut2, fontFamily: MONO }}>{ins.sym} · Twelve Data</div>
+        </div>
+        <button onClick={onClose} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 8,
+          color: C.mut, cursor: "pointer", padding: 6 }}><X size={18} /></button>
+      </div>
+
+      <div style={{ padding: "16px", flex: 1, overflowY: "auto" }}>
+        <div style={{ minHeight: 60 }}>{head}</div>
+
+        <div style={{ marginTop: 14, background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 8px" }}>
+          {status === "loading" && <div style={{ color: C.mut2, fontSize: 13, fontFamily: MONO, textAlign: "center", padding: 40 }}>טוען גרף…</div>}
+          {status === "ok" && svg}
+          {status === "nodata" && <div style={{ color: C.mut2, fontSize: 13, textAlign: "center", padding: 40 }}>אין נתון זמין כרגע לטווח הזה.</div>}
+          {status === "error" && <div style={{ color: C.amber, fontSize: 12.5, textAlign: "center", padding: 30, lineHeight: 1.6 }}>שגיאה: {err}</div>}
+        </div>
+
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 14 }}>
+          {TIMEFRAMES.map((t, i) => (
+            <button key={t.label} onClick={() => setTfIdx(i)} style={{
+              flex: "0 0 auto", padding: "8px 14px", borderRadius: 8, fontFamily: MONO, fontSize: 13, cursor: "pointer",
+              background: tfIdx === i ? C.blue : "transparent", color: tfIdx === i ? "#fff" : C.mut,
+              border: `1px solid ${tfIdx === i ? C.blue : C.line}` }}>{t.label}</button>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: C.mut2, marginTop: 12, lineHeight: 1.6, fontFamily: MONO }}>
+          נגע בנר כדי לראות פתיחה / גבוה / נמוך / סגירה. נתונים אמיתיים מ‑Twelve Data.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Market({ provider, proxyBase, onSetProxy }) {
   const [tf, setTf] = useState(4); // default: יום
   const [rows, setRows] = useState({});
@@ -268,6 +397,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
   const [showKey, setShowKey] = useState(false);
   const [draftKey, setDraftKey] = useState(proxyBase || "");
   const [ts, setTs] = useState(null);
+  const [detail, setDetail] = useState(null);
 
   const load = useCallback(async () => {
     if (!provider) { setStatus("nokey"); return; }
@@ -296,7 +426,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
 
   return (
     <div style={{ padding: "18px 16px 96px" }}>
-      <Header title="השוק" sub="תמונת מצב לשווקים — הבסיס לניתוח של Melo" icon={<LineChart size={18} color={C.blue} />}>
+      <Header title="השוק" sub="תמונת מצב לשווקים — הבסיס לניתוח של Theo" icon={<LineChart size={18} color={C.blue} />}>
         <Btn kind="ghost" onClick={() => setShowKey(true)} style={{ padding: "8px 10px" }}><Settings2 size={16} /></Btn>
         <Btn kind="ghost" onClick={load} disabled={!provider || status === "loading"} style={{ padding: "8px 10px" }}>
           {status === "loading" ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
@@ -358,7 +488,8 @@ function Market({ provider, proxyBase, onSetProxy }) {
               const r = rows[ins.sym];
               const up = r && r.chg != null && r.chg >= 0;
               return (
-                <Card key={ins.sym} style={{ padding: 12 }}>
+                <Card key={ins.sym} onClick={() => provider && setDetail(ins)}
+                  style={{ padding: 12, cursor: provider ? "pointer" : "default" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{ins.name}</div>
                     {ins.note && <Pill>{ins.note}</Pill>}
@@ -403,6 +534,8 @@ function Market({ provider, proxyBase, onSetProxy }) {
           </div>
         </Modal>
       )}
+
+      {detail && <CandleDetail ins={detail} provider={provider} onClose={() => setDetail(null)} />}
     </div>
   );
 }
@@ -444,12 +577,12 @@ function Chat({ profile, strategy, onSendToStrategy }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ padding: "14px 16px 0" }}>
-        <Header title="Chat" sub="Melo — אנליסט השקעות AI. אנליטי, ספקן, מבוסס נתונים." icon={<MessageSquare size={18} color={C.blue} />} />
+        <Header title="Chat" sub="Theo — אנליסט השקעות AI. אנליטי, ספקן, מבוסס נתונים." icon={<MessageSquare size={18} color={C.blue} />} />
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 12px" }}>
         {msgs.length === 0 && (
           <Card style={{ padding: 16, marginTop: 8 }}>
-            <div style={{ color: C.text, fontWeight: 600, marginBottom: 8 }}>Melo כאן.</div>
+            <div style={{ color: C.text, fontWeight: 600, marginBottom: 8 }}>Theo כאן.</div>
             <div style={{ color: C.mut, fontSize: 13, lineHeight: 1.7 }}>
               דבר איתי על שוק, נכס או רעיון. אני לא אסכים איתך אוטומטית — אם רעיון חלש, אגיד לך למה.
               אם חסרים נתונים, אומר זאת במקום לנחש.
@@ -477,12 +610,12 @@ function Chat({ profile, strategy, onSendToStrategy }) {
             </div>
           </div>
         ))}
-        {busy && <div style={{ color: C.mut2, fontSize: 13, fontFamily: MONO, padding: 8 }}>Melo מנתח…</div>}
+        {busy && <div style={{ color: C.mut2, fontSize: 13, fontFamily: MONO, padding: 8 }}>Theo מנתח…</div>}
         <div ref={endRef} />
       </div>
       <div style={{ padding: "8px 12px 12px", borderTop: `1px solid ${C.lineSoft}`, display: "flex", gap: 8, background: C.bg }}>
         <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="שאל את Melo…" style={{ flex: 1, padding: "12px 14px", borderRadius: 12, background: C.card,
+          placeholder="שאל את Theo…" style={{ flex: 1, padding: "12px 14px", borderRadius: 12, background: C.card,
             border: `1px solid ${C.line}`, color: C.text, fontSize: 14 }} />
         <Btn kind="primary" onClick={send} disabled={busy || !input.trim()} style={{ padding: "0 14px" }}><Send size={16} /></Btn>
       </div>
@@ -496,7 +629,7 @@ function Strategy({ profile, setProfile, strategy, setStrategy, versions, setVer
   const [tab, setTab] = useState("build"); // build | profile | test | journal | versions
   return (
     <div style={{ padding: "14px 16px 96px" }}>
-      <Header title="פיתוח השיטה" sub="הלב של THESIS — אתה בונה את השיטה יחד עם Melo." icon={<Brain size={18} color={C.blue} />} />
+      <Header title="פיתוח השיטה" sub="הלב של THESIS — אתה בונה את השיטה יחד עם Theo." icon={<Brain size={18} color={C.blue} />} />
       <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "4px 0 12px" }}>
         {[["build", "השיטה", Layers], ["profile", "פרופיל", Target], ["test", "בדיקות", Beaker],
           ["journal", "יומן", BookOpen], ["versions", "גרסאות", GitBranch]].map(([id, lbl, Icon]) => (
@@ -578,13 +711,13 @@ function ProfilePane({ profile, setProfile }) {
       <Card style={{ padding: 14 }}>
         <div style={{ fontWeight: 600, color: C.text, marginBottom: 4 }}>שלב ההיכרות</div>
         <div style={{ color: C.mut, fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
-          Melo ישאל אותך שאלות בהדרגה כדי להבין מי אתה כמשקיע. בסוף נחלץ מזה פרופיל שאפשר לערוך.
+          Theo ישאל אותך שאלות בהדרגה כדי להבין מי אתה כמשקיע. בסוף נחלץ מזה פרופיל שאפשר לערוך.
         </div>
         <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 10 }}>
           {conv.map((m, i) => (
             <div key={i} style={{ margin: "8px 0", fontSize: 13.5, lineHeight: 1.6,
               color: m.role === "user" ? C.blueHi : C.text }}>
-              <b style={{ color: C.mut2, fontSize: 11, fontFamily: MONO }}>{m.role === "user" ? "אתה" : "Melo"} · </b>{m.content}
+              <b style={{ color: C.mut2, fontSize: 11, fontFamily: MONO }}>{m.role === "user" ? "אתה" : "Theo"} · </b>{m.content}
             </div>
           ))}
         </div>
@@ -674,14 +807,14 @@ function BuildPane({ profile, strategy, setStrategy, versions, setVersions, seed
       <Card style={{ padding: 16 }}>
         <div style={{ fontWeight: 700, color: C.text, marginBottom: 6 }}>עדיין אין שיטה</div>
         <div style={{ color: C.mut, fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>
-          אתה לא מקבל שיטה מוכנה — אתה בונה אותה עם Melo. תאר בכמה מילים לאן אתה מכוון, ו‑Melo יציע טיוטת שיטה
+          אתה לא מקבל שיטה מוכנה — אתה בונה אותה עם Theo. תאר בכמה מילים לאן אתה מכוון, ו‑Theo יציע טיוטת שיטה
           מותאמת לפרופיל שלך. תוכל לערוך כל חלק, לאתגר אותה ולבדוק אותה.
         </div>
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
           placeholder="למשל: מגמה ארוכת טווח על מדדים רחבים, עם ניהול סיכון הדוק…"
           style={{ width: "100%", padding: 12, borderRadius: 10, background: C.bg2, border: `1px solid ${C.line}`, color: C.text, fontSize: 14, resize: "vertical" }} />
         <Btn kind="primary" onClick={build} disabled={busy === "build"} style={{ marginTop: 12, width: "100%" }}>
-          {busy === "build" ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} בנה טיוטת שיטה עם Melo
+          {busy === "build" ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} בנה טיוטת שיטה עם Theo
         </Btn>
         {!profile && <div style={{ marginTop: 10, fontSize: 12, color: C.amber }}>טיפ: מלא קודם פרופיל בלשונית "פרופיל" לתוצאה מדויקת יותר.</div>}
       </Card>
@@ -754,7 +887,7 @@ function TestPane({ strategy, provider, journal, setJournal }) {
   const backtest = async () => {
     setErr(""); setBt(null);
     if (!provider) { setErr("חבר ספק נתונים בלשונית 'השוק' כדי לרוץ על היסטוריה אמיתית."); return; }
-    if (!canCompute) { setErr("לשיטה אין כלל בר‑חישוב אוטומטי. בקש מ‑Melo לבנות backtestRule."); return; }
+    if (!canCompute) { setErr("לשיטה אין כלל בר‑חישוב אוטומטי. בקש מ‑Theo לבנות backtestRule."); return; }
     setBusy("bt");
     try {
       const d = await provider.timeSeries(rule.symbol, "1day", 2000);
