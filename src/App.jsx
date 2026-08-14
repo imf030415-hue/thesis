@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   LineChart, MessageSquare, Brain, RefreshCw, Plus, ChevronRight, ChevronDown,
   AlertTriangle, ShieldCheck, Target, Layers, Activity, Send, Settings2,
-  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2
+  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2, Star, Search
 } from "lucide-react";
 
 /* ============================================================================
@@ -68,6 +68,7 @@ const K = {
   chat: "thesis:chat",
   paper: "thesis:paper",
   seen: "thesis:seen",
+  watch: "thesis:watch",
 };
 
 /* --------------------------- Anthropic (the AI) --------------------------- */
@@ -140,6 +141,14 @@ const INSTRUMENTS = [
   { g: "סקטורים", name: "פיננסים", sym: "XLF" },
   { g: "סקטורים", name: "אנרגיה", sym: "XLE" },
   { g: "סקטורים", name: "בריאות", sym: "XLV" },
+  { g: "מניות", name: "Apple", sym: "AAPL" },
+  { g: "מניות", name: "Microsoft", sym: "MSFT" },
+  { g: "מניות", name: "Nvidia", sym: "NVDA" },
+  { g: "מניות", name: "Tesla", sym: "TSLA" },
+  { g: "מניות", name: "Amazon", sym: "AMZN" },
+  { g: "מניות", name: "Alphabet", sym: "GOOGL" },
+  { g: "מניות", name: "Meta", sym: "META" },
+  { g: "מניות", name: "Netflix", sym: "NFLX" },
 ];
 const TIMEFRAMES = [
   { label: "1ד", iv: "1min", n: 60 }, { label: "5ד", iv: "5min", n: 78 },
@@ -422,6 +431,20 @@ function Market({ provider, proxyBase, onSetProxy }) {
   const [detail, setDetail] = useState(null);
   const [flash, setFlash] = useState({});
   const prevRef = useRef({});
+  const [watch, setWatch] = useState([]);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => { store.get(K.watch).then((w) => { if (w) setWatch(w); }); }, []);
+  const toggleWatch = (sym, e) => {
+    e.stopPropagation();
+    setWatch((w) => { const nw = w.includes(sym) ? w.filter((s) => s !== sym) : [...w, sym]; store.set(K.watch, nw); return nw; });
+  };
+  const openSearch = () => {
+    const q = search.trim().toUpperCase();
+    if (!q) return;
+    setDetail({ name: q, sym: q });
+    setSearch("");
+  };
 
   const load = useCallback(async () => {
     if (!provider) { setStatus("nokey"); return; }
@@ -473,6 +496,53 @@ function Market({ provider, proxyBase, onSetProxy }) {
         ))}
       </div>
 
+      {/* search any symbol */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: C.card,
+          border: `1px solid ${C.line}`, borderRadius: 10, padding: "0 12px" }}>
+          <Search size={16} color={C.mut2} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && openSearch()}
+            placeholder="חפש נכס (למשל AAPL, TSLA, BTC/USD)…"
+            style={{ flex: 1, padding: "11px 0", background: "transparent", border: "none", color: C.text, fontSize: 14, direction: "ltr", textAlign: "left" }} />
+        </div>
+        <Btn kind="primary" onClick={openSearch} disabled={!search.trim() || !provider} style={{ padding: "0 16px" }}>הצג</Btn>
+      </div>
+
+      {/* watchlist */}
+      {watch.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <Label>⭐ מועדפים</Label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {INSTRUMENTS.filter((i) => watch.includes(i.sym)).map((ins, idx) => {
+              const r = rows[ins.sym];
+              const up = r && r.chg != null && r.chg >= 0;
+              return (
+                <Card key={"w" + ins.sym} onClick={() => provider && setDetail(ins)}
+                  className={`rise ${flash[ins.sym] || ""}`}
+                  style={{ padding: 12, cursor: provider ? "pointer" : "default", animationDelay: `${idx * 50}ms`, borderColor: `${C.amber}44` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{ins.name}</div>
+                    <Star size={14} color={C.amber} fill={C.amber} style={{ cursor: "pointer" }} onClick={(e) => toggleWatch(ins.sym, e)} />
+                  </div>
+                  <div style={{ marginTop: 8, fontFamily: MONO }}>
+                    {!r ? <span style={{ color: C.mut2, fontSize: 12 }}>…</span>
+                      : r.na ? <span style={{ color: C.mut2, fontSize: 12 }}>אין נתון זמין</span>
+                      : (
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                          <span style={{ fontSize: 18, color: C.text }}>{r.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                          {r.chg != null && <span style={{ fontSize: 13, color: up ? C.green : C.red }}>{up ? "+" : ""}{r.chg.toFixed(2)}%</span>}
+                        </div>
+                      )}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO, marginTop: 4 }}>{ins.sym}</div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* connection status banner */}
       {status === "nokey" && (
         <Card style={{ padding: 16, marginBottom: 14 }}>
@@ -523,7 +593,12 @@ function Market({ provider, proxyBase, onSetProxy }) {
                   style={{ padding: 12, cursor: provider ? "pointer" : "default", animationDelay: `${idx * 60}ms` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{ins.name}</div>
-                    {ins.note && <Pill>{ins.note}</Pill>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {ins.note && <Pill>{ins.note}</Pill>}
+                      <Star size={14} color={watch.includes(ins.sym) ? C.amber : C.mut2}
+                        fill={watch.includes(ins.sym) ? C.amber : "none"} style={{ cursor: "pointer" }}
+                        onClick={(e) => toggleWatch(ins.sym, e)} />
+                    </div>
                   </div>
                   <div style={{ marginTop: 8, fontFamily: MONO }}>
                     {!provider ? <span style={{ color: C.mut2, fontSize: 12 }}>—</span>
