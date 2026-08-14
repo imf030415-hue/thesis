@@ -283,7 +283,7 @@ function CandleDetail({ ins, provider, onClose }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const W = 360, H = 230, padT = 8, padB = 16, padR = 46;
+  const W = 360, H = 230, padT = 10, padB = 16, padR = 46;
   let svg = null, head = null;
   if (status === "ok" && candles) {
     const n = candles.length;
@@ -292,32 +292,62 @@ function CandleDetail({ ins, provider, onClose }) {
     const span = (hi - lo) || 1;
     const plotW = W - padR, plotH = H - padT - padB;
     const y = (p) => padT + ((hi - p) / span) * plotH;
-    const slot = plotW / n;
-    const bodyW = Math.max(1, Math.min(slot * 0.65, 9));
+    const x = (i) => (n <= 1 ? 0 : (i / (n - 1)) * plotW);
+    const base = candles[0].o;
     const shown = sel != null ? candles[sel] : candles[n - 1];
-    const chg = ((candles[n - 1].c / candles[0].o) - 1) * 100;
-    const up = chg >= 0;
+    const chgFromStart = ((shown.c / base) - 1) * 100;   // change up to the point you're touching
+    const up = chgFromStart >= 0;
+    const lineCol = up ? C.green : C.red;
+
+    // smooth path (Catmull-Rom -> cubic bezier)
+    const pts = candles.map((c, i) => [x(i), y(c.c)]);
+    let dLine = `M ${pts[0][0]} ${pts[0][1]}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      dLine += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2[0]} ${p2[1]}`;
+    }
+    const dArea = `${dLine} L ${pts[n - 1][0]} ${padT + plotH} L ${pts[0][0]} ${padT + plotH} Z`;
+
     head = (
       <div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <span style={{ fontSize: 24, fontFamily: MONO, color: C.text }}>
-            {candles[n - 1].c.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            {shown.c.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </span>
           <span style={{ fontSize: 14, fontFamily: MONO, color: up ? C.green : C.red }}>
-            {up ? "+" : ""}{chg.toFixed(2)}%
+            {up ? "+" : ""}{chgFromStart.toFixed(2)}%
           </span>
         </div>
-        <div style={{ display: "flex", gap: 12, marginTop: 6, fontFamily: MONO, fontSize: 11, color: C.mut }}>
-          <span>O {shown.o.toFixed(2)}</span>
-          <span style={{ color: C.teal }}>H {shown.h.toFixed(2)}</span>
-          <span style={{ color: C.red }}>L {shown.l.toFixed(2)}</span>
-          <span>C {shown.c.toFixed(2)}</span>
+        <div style={{ fontSize: 11, color: C.mut2, fontFamily: MONO, marginTop: 4 }}>
+          {sel != null ? shown.t : "מתחילת התקופה עד עכשיו · נגע בגרף לכל נקודה"}
         </div>
-        {sel != null && <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO, marginTop: 3 }}>{shown.t}</div>}
       </div>
     );
+
+    const selX = sel != null ? x(sel) : null;
+    const selY = sel != null ? y(shown.c) : null;
+
     svg = (
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", touchAction: "none" }}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const rx = ((e.clientX - rect.left) / rect.width) * W;
+          setSel(Math.max(0, Math.min(n - 1, Math.round((rx / plotW) * (n - 1)))));
+        }}
+        onTouchMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const rx = ((e.touches[0].clientX - rect.left) / rect.width) * W;
+          setSel(Math.max(0, Math.min(n - 1, Math.round((rx / plotW) * (n - 1)))));
+        }}
+        onMouseLeave={() => setSel(null)}>
+        <defs>
+          <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineCol} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={lineCol} stopOpacity="0" />
+          </linearGradient>
+        </defs>
         {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
           const p = hi - f * span, yy = padT + f * plotH;
           return (
@@ -329,24 +359,16 @@ function CandleDetail({ ins, provider, onClose }) {
             </g>
           );
         })}
-        {candles.map((c, i) => {
-          const cx = i * slot + slot / 2, isUp = c.c >= c.o, col = isUp ? C.green : C.red;
-          const top = Math.min(y(c.o), y(c.c)), hgt = Math.max(1, Math.abs(y(c.c) - y(c.o)));
-          return (
-            <g key={i}>
-              <line x1={cx} y1={y(c.h)} x2={cx} y2={y(c.l)} stroke={col} strokeWidth="1" />
-              <rect x={cx - bodyW / 2} y={top} width={bodyW} height={hgt} fill={col} />
-            </g>
-          );
-        })}
+        <path d={dArea} fill="url(#grad)" />
+        <path key={tfIdx} d={dLine} pathLength="1" fill="none" stroke={lineCol} strokeWidth="1.6"
+          strokeLinejoin="round" strokeLinecap="round"
+          style={{ strokeDasharray: 1, animation: "drawLine .9s ease forwards" }} />
         {sel != null && (
-          <line x1={sel * slot + slot / 2} y1={0} x2={sel * slot + slot / 2} y2={H - padB}
-            stroke={C.blueHi} strokeWidth="0.6" strokeDasharray="2 2" />
+          <g>
+            <line x1={selX} y1={padT} x2={selX} y2={padT + plotH} stroke={C.blueHi} strokeWidth="0.7" strokeDasharray="3 3" />
+            <circle cx={selX} cy={selY} r="4" fill={C.bg} stroke={C.blueHi} strokeWidth="1.6" />
+          </g>
         )}
-        {candles.map((c, i) => (
-          <rect key={"o" + i} x={i * slot} y={0} width={slot} height={H} fill="transparent"
-            onClick={() => setSel(i)} style={{ cursor: "pointer" }} />
-        ))}
       </svg>
     );
   }
@@ -382,7 +404,7 @@ function CandleDetail({ ins, provider, onClose }) {
           ))}
         </div>
         <div style={{ fontSize: 11, color: C.mut2, marginTop: 12, lineHeight: 1.6, fontFamily: MONO }}>
-          נגע בנר כדי לראות פתיחה / גבוה / נמוך / סגירה. נתונים אמיתיים מ‑Twelve Data.
+          העבר את האצבע על הגרף כדי לראות מחיר, תאריך ואת השינוי מתחילת התקופה. נתונים אמיתיים מ‑Twelve Data.
         </div>
       </div>
     </div>
@@ -398,6 +420,8 @@ function Market({ provider, proxyBase, onSetProxy }) {
   const [draftKey, setDraftKey] = useState(proxyBase || "");
   const [ts, setTs] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [flash, setFlash] = useState({});
+  const prevRef = useRef({});
 
   const load = useCallback(async () => {
     if (!provider) { setStatus("nokey"); return; }
@@ -411,6 +435,12 @@ function Market({ provider, proxyBase, onSetProxy }) {
         const chg = parseFloat(q.percent_change);
         if (!isFinite(price)) { next[ins.sym] = { na: true }; continue; }
         next[ins.sym] = { price, chg: isFinite(chg) ? chg : null, delayed: q.is_market_open === false };
+        const prev = prevRef.current[ins.sym];
+        if (prev != null && price !== prev) {
+          setFlash((f) => ({ ...f, [ins.sym]: price > prev ? "flashUp" : "flashDn" }));
+          setTimeout(() => setFlash((f) => ({ ...f, [ins.sym]: "" })), 850);
+        }
+        prevRef.current[ins.sym] = price;
         anyOk = true;
       } catch (e) { next[ins.sym] = { na: true }; lastErr = e.message; }
       setRows({ ...next });
@@ -484,12 +514,13 @@ function Market({ provider, proxyBase, onSetProxy }) {
         <div key={g} style={{ marginBottom: 18 }}>
           <Label>{g}</Label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {INSTRUMENTS.filter((i) => i.g === g).map((ins) => {
+            {INSTRUMENTS.filter((i) => i.g === g).map((ins, idx) => {
               const r = rows[ins.sym];
               const up = r && r.chg != null && r.chg >= 0;
               return (
                 <Card key={ins.sym} onClick={() => provider && setDetail(ins)}
-                  style={{ padding: 12, cursor: provider ? "pointer" : "default" }}>
+                  className={`rise ${flash[ins.sym] || ""}`}
+                  style={{ padding: 12, cursor: provider ? "pointer" : "default", animationDelay: `${idx * 60}ms` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{ins.name}</div>
                     {ins.note && <Pill>{ins.note}</Pill>}
@@ -1154,7 +1185,15 @@ export default function App() {
       fontFamily: "system-ui, -apple-system, 'Segoe UI', Arial, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <style>{`.spin{animation:s 1s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
         *::-webkit-scrollbar{width:6px;height:6px}*::-webkit-scrollbar-thumb{background:${C.line};border-radius:3px}
-        textarea,input{outline:none}textarea:focus,input:focus{border-color:${C.blue}66}`}</style>
+        textarea,input{outline:none}textarea:focus,input:focus{border-color:${C.blue}66}
+        @keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        .rise{animation:slideIn .45s cubic-bezier(.2,.7,.3,1) both}
+        @keyframes flashUp{0%{background:${C.green}22}100%{background:${C.card}}}
+        @keyframes flashDn{0%{background:${C.red}22}100%{background:${C.card}}}
+        .flashUp{animation:flashUp .8s ease-out}.flashDn{animation:flashDn .8s ease-out}
+        @keyframes drawLine{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+        @keyframes fadeTab{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        .fadeTab{animation:fadeTab .3s ease both}`}</style>
 
       {/* top brand bar */}
       <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.lineSoft}`, display: "flex",
@@ -1165,7 +1204,7 @@ export default function App() {
 
       {/* body */}
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-        <div style={{ height: "100%", overflowY: tab === "chat" ? "hidden" : "auto" }}>
+        <div key={tab} className="fadeTab" style={{ height: "100%", overflowY: tab === "chat" ? "hidden" : "auto" }}>
           {tab === "market" && <Market provider={provider} proxyBase={proxyBase} onSetProxy={setProxy} />}
           {tab === "chat" && <Chat profile={profile} strategy={strategy} onSendToStrategy={sendToStrategy} />}
           {tab === "strategy" && (
