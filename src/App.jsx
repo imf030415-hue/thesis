@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   LineChart, MessageSquare, Brain, RefreshCw, Plus, ChevronRight, ChevronDown,
   AlertTriangle, ShieldCheck, Target, Layers, Activity, Send, Settings2,
-  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2, Star, Search
+  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2, Star, Search, Sun, Moon
 } from "lucide-react";
 
 /* ============================================================================
@@ -21,24 +21,21 @@ const AI_MODEL = "claude-sonnet-5"; // real Anthropic API model; change if docs.
 // proxy runs on a different domain.
 const PROXY_BASE = "";
 
-const C = {
-  bg:      "#07080B",
-  bg2:     "#0A0C11",
-  card:    "#101319",
-  card2:   "#12151C",
-  line:    "#1D222C",
-  lineSoft:"#161A22",
-  text:    "#EEF1F6",
-  mut:     "#8A93A3",
-  mut2:    "#5C6472",
-  blue:    "#3D7BFF",
-  blueHi:  "#6AA0FF",
-  purple:  "#8B5CF6",
-  teal:    "#2DD4BF",
-  green:   "#3FCF8E",
-  red:     "#F0716F",
-  amber:   "#E8B84B",
+const THEMES = {
+  dark: {
+    bg: "#07080B", bg2: "#0A0C11", card: "#101319", card2: "#12151C",
+    line: "#1D222C", lineSoft: "#161A22", text: "#EEF1F6", mut: "#8A93A3",
+    mut2: "#5C6472", blue: "#3D7BFF", blueHi: "#6AA0FF", purple: "#8B5CF6",
+    teal: "#2DD4BF", green: "#3FCF8E", red: "#F0716F", amber: "#E8B84B",
+  },
+  light: {
+    bg: "#F4F6FB", bg2: "#FFFFFF", card: "#FFFFFF", card2: "#F0F3F9",
+    line: "#DDE3EC", lineSoft: "#E8ECF3", text: "#0E1420", mut: "#5A6473",
+    mut2: "#93A0B2", blue: "#2E6BFF", blueHi: "#1E4FCC", purple: "#7C4DEF",
+    teal: "#12A594", green: "#1E9E68", red: "#DB5450", amber: "#B7860B",
+  },
 };
+let C = THEMES.dark; // active palette (swapped at runtime by the theme toggle)
 const MONO = "ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace";
 
 /* ------------------------------- storage ---------------------------------- */
@@ -69,6 +66,7 @@ const K = {
   paper: "thesis:paper",
   seen: "thesis:seen",
   watch: "thesis:watch",
+  theme: "thesis:theme",
 };
 
 /* --------------------------- Anthropic (the AI) --------------------------- */
@@ -244,23 +242,27 @@ const Facet = ({ tone, label, children }) => {
 function Splash({ onStart }) {
   return (
     <div style={{ position: "absolute", inset: 0, background: C.bg, display: "flex",
-      flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, textAlign: "center" }}>
-      <div style={{ position: "absolute", top: "18%", width: 320, height: 320, borderRadius: "50%",
-        background: `radial-gradient(circle, ${C.blue}22, transparent 70%)`, filter: "blur(20px)" }} />
+      flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, textAlign: "center", overflow: "hidden" }}>
+      <div className="glow" style={{ position: "absolute", top: "12%", width: 340, height: 340, borderRadius: "50%",
+        background: `radial-gradient(circle, ${C.blue}33, transparent 70%)`, filter: "blur(30px)" }} />
+      <div className="glow" style={{ position: "absolute", bottom: "10%", right: "8%", width: 240, height: 240, borderRadius: "50%",
+        background: `radial-gradient(circle, ${C.purple}2e, transparent 70%)`, filter: "blur(34px)", animationDelay: "1.5s" }} />
+      <div className="glow" style={{ position: "absolute", top: "40%", left: "6%", width: 180, height: 180, borderRadius: "50%",
+        background: `radial-gradient(circle, ${C.teal}22, transparent 70%)`, filter: "blur(30px)", animationDelay: "2.4s" }} />
       <div style={{ zIndex: 1 }}>
-        <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: 8, color: C.blueHi, marginBottom: 18 }}>THESIS</div>
-        <h1 style={{ fontSize: 34, fontWeight: 800, color: C.text, margin: 0, lineHeight: 1.2 }}>
+        <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: 8, color: C.blueHi, marginBottom: 18, animation: "revealUp .6s ease both" }}>THESIS</div>
+        <h1 style={{ fontSize: 34, fontWeight: 800, color: C.text, margin: 0, lineHeight: 1.2, animation: "revealUp .6s ease .1s both" }}>
           בנה שיטה.<br />בדוק אותה.<br />שפר אותה.
         </h1>
-        <p style={{ color: C.mut, fontSize: 15, maxWidth: 340, margin: "22px auto 0", lineHeight: 1.7 }}>
+        <p style={{ color: C.mut, fontSize: 15, maxWidth: 340, margin: "22px auto 0", lineHeight: 1.7, animation: "revealUp .6s ease .2s both" }}>
           במקום לחפש את ההשקעה הבאה, בנה תהליך שיודע איך לחפש אותה.
         </p>
-        <div style={{ marginTop: 34 }}>
-          <Btn kind="primary" onClick={onStart} style={{ padding: "14px 22px", fontSize: 15 }}>
+        <div style={{ marginTop: 34, animation: "revealUp .6s ease .3s both" }}>
+          <Btn kind="primary" onClick={onStart} style={{ padding: "14px 22px", fontSize: 15, boxShadow: `0 0 30px ${C.blue}55` }}>
             התחל לבנות את השיטה שלי <ChevronRight size={18} />
           </Btn>
         </div>
-        <div style={{ marginTop: 20, fontSize: 12, color: C.mut2, fontFamily: MONO }}>
+        <div style={{ marginTop: 20, fontSize: 12, color: C.mut2, fontFamily: MONO, animation: "revealUp .6s ease .4s both" }}>
           משתמש + AI → שיטה → בדיקה → שיפור
         </div>
       </div>
@@ -1225,6 +1227,7 @@ export default function App() {
   const [versions, setVersions] = useState([]);
   const [journal, setJournal] = useState([]);
   const [seed, setSeed] = useState("");
+  const [theme, setTheme] = useState("dark");
 
   // hydrate from persistent storage (rule #28: memory)
   useEffect(() => {
@@ -1233,6 +1236,8 @@ export default function App() {
         store.get(K.proxy), store.get(K.profile), store.get(K.strategy),
         store.get(K.versions), store.get(K.journal), store.get(K.seen),
       ]);
+      const th = await store.get(K.theme);
+      if (th && THEMES[th]) { C = THEMES[th]; setTheme(th); }
       if (pb) { setProxyBase(pb); setProvider(new TwelveData(pb)); }
       if (p) setProfile(p);
       if (s) setStrategy(s);
@@ -1252,6 +1257,10 @@ export default function App() {
   const setProxy = (url) => { const u = (url || "").trim(); setProxyBase(u); setProvider(new TwelveData(u)); store.set(K.proxy, u); };
   const startApp = () => { setShowSplash(false); store.set(K.seen, true); setTab("strategy"); };
   const sendToStrategy = (text) => { setSeed(text); setTab("strategy"); };
+  const toggleTheme = () => {
+    const nt = theme === "dark" ? "light" : "dark";
+    C = THEMES[nt]; setTheme(nt); store.set(K.theme, nt);
+  };
 
   if (!ready) return <div style={{ background: C.bg, position: "fixed", inset: 0 }} />;
 
@@ -1268,13 +1277,23 @@ export default function App() {
         .flashUp{animation:flashUp .8s ease-out}.flashDn{animation:flashDn .8s ease-out}
         @keyframes drawLine{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
         @keyframes fadeTab{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-        .fadeTab{animation:fadeTab .3s ease both}`}</style>
+        .fadeTab{animation:fadeTab .3s ease both}
+        @keyframes breathe{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:.85;transform:scale(1.12)}}
+        .glow{animation:breathe 4.5s ease-in-out infinite}
+        @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+        @keyframes revealUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
 
       {/* top brand bar */}
       <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.lineSoft}`, display: "flex",
         alignItems: "center", justifyContent: "space-between", flex: "0 0 auto" }}>
         <div style={{ fontFamily: MONO, fontSize: 13, letterSpacing: 4, color: C.text }}>THESIS</div>
-        <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO }}>build · test · improve</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO }}>build · test · improve</div>
+          <button onClick={toggleTheme} title="מצב יום/לילה" style={{ background: "none", border: `1px solid ${C.line}`,
+            borderRadius: 8, padding: 5, cursor: "pointer", color: C.mut, display: "flex" }}>
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+        </div>
       </div>
 
       {/* body */}
