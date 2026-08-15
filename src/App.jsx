@@ -271,6 +271,28 @@ function Splash({ onStart }) {
 }
 
 /* =============================== MARKET =================================== */
+/* --- tiny sparkline drawn from real closes --- */
+function Sparkline({ data, up }) {
+  if (!data || data.length < 2) return null;
+  const w = 72, h = 24, hi = Math.max(...data), lo = Math.min(...data), span = (hi - lo) || 1;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - lo) / span) * h}`).join(" ");
+  const col = up ? C.green : C.red;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} style={{ display: "block" }} preserveAspectRatio="none">
+      <polyline points={pts} fill="none" stroke={col} strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+function SkeletonCard() {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 12 }}>
+      <div className="skel" style={{ height: 12, width: "60%" }} />
+      <div className="skel" style={{ height: 20, width: "45%", marginTop: 12 }} />
+      <div className="skel" style={{ height: 24, width: "100%", marginTop: 10 }} />
+    </div>
+  );
+}
+
 /* --- candlestick detail: real OHLC candles, switchable timeframe, tap a candle --- */
 function CandleDetail({ ins, provider, onClose }) {
   const [tfIdx, setTfIdx] = useState(4); // default: יום
@@ -414,6 +436,24 @@ function CandleDetail({ ins, provider, onClose }) {
               border: `1px solid ${tfIdx === i ? C.blue : C.line}` }}>{t.label}</button>
           ))}
         </div>
+
+        {status === "ok" && candles && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 }}>
+            {[
+              ["פתיחת התקופה", candles[0].o],
+              ["מחיר אחרון", candles[candles.length - 1].c],
+              ["גבוה בתקופה", Math.max(...candles.map((c) => c.h)), C.teal],
+              ["נמוך בתקופה", Math.min(...candles.map((c) => c.l)), C.red],
+            ].map(([lbl, val, col]) => (
+              <div key={lbl} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10.5, color: C.mut2, fontFamily: MONO }}>{lbl}</div>
+                <div style={{ fontSize: 16, color: col || C.text, fontFamily: MONO, marginTop: 3 }}>
+                  {val.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ fontSize: 11, color: C.mut2, marginTop: 12, lineHeight: 1.6, fontFamily: MONO }}>
           העבר את האצבע על הגרף כדי לראות מחיר, תאריך ואת השינוי מתחילת התקופה. נתונים אמיתיים מ‑Twelve Data.
         </div>
@@ -455,14 +495,16 @@ function Market({ provider, proxyBase, onSetProxy }) {
     let anyOk = false, lastErr = "";
     for (const ins of INSTRUMENTS) {
       try {
-        const q = await provider.quote(ins.sym);
-        const price = parseFloat(q.close ?? q.price);
-        const chg = parseFloat(q.percent_change);
-        if (!isFinite(price)) { next[ins.sym] = { na: true }; continue; }
-        next[ins.sym] = { price, chg: isFinite(chg) ? chg : null, delayed: q.is_market_open === false };
-        const prev = prevRef.current[ins.sym];
-        if (prev != null && price !== prev) {
-          setFlash((f) => ({ ...f, [ins.sym]: price > prev ? "flashUp" : "flashDn" }));
+        const d = await provider.timeSeries(ins.sym, "1day", 30);
+        const vals = (d.values || []).map((v) => +v.close).filter(isFinite).reverse();
+        if (vals.length < 2) { next[ins.sym] = { na: true }; setRows({ ...next }); continue; }
+        const price = vals[vals.length - 1];
+        const prev = vals[vals.length - 2];
+        const chg = (price / prev - 1) * 100;
+        next[ins.sym] = { price, chg, spark: vals };
+        const pv = prevRef.current[ins.sym];
+        if (pv != null && price !== pv) {
+          setFlash((f) => ({ ...f, [ins.sym]: price > pv ? "flashUp" : "flashDn" }));
           setTimeout(() => setFlash((f) => ({ ...f, [ins.sym]: "" })), 850);
         }
         prevRef.current[ins.sym] = price;
@@ -527,17 +569,24 @@ function Market({ provider, proxyBase, onSetProxy }) {
                     <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{ins.name}</div>
                     <Star size={14} color={C.amber} fill={C.amber} style={{ cursor: "pointer" }} onClick={(e) => toggleWatch(ins.sym, e)} />
                   </div>
-                  <div style={{ marginTop: 8, fontFamily: MONO }}>
-                    {!r ? <span style={{ color: C.mut2, fontSize: 12 }}>…</span>
-                      : r.na ? <span style={{ color: C.mut2, fontSize: 12 }}>אין נתון זמין</span>
-                      : (
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                          <span style={{ fontSize: 18, color: C.text }}>{r.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                          {r.chg != null && <span style={{ fontSize: 13, color: up ? C.green : C.red }}>{up ? "+" : ""}{r.chg.toFixed(2)}%</span>}
-                        </div>
-                      )}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 8 }}>
+                    <div style={{ fontFamily: MONO }}>
+                      {!r ? <span style={{ color: C.mut2, fontSize: 12 }}>…</span>
+                        : r.na ? <span style={{ color: C.mut2, fontSize: 12 }}>אין נתון זמין</span>
+                        : (
+                          <div>
+                            <div style={{ fontSize: 18, color: C.text }}>{r.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                            {r.chg != null && (
+                              <div style={{ fontSize: 12.5, color: up ? C.green : C.red, display: "flex", alignItems: "center", gap: 3 }}>
+                                <span>{up ? "▲" : "▼"}</span>{up ? "+" : ""}{r.chg.toFixed(2)}%
+                              </div>
+                            )}
+                          </div>
+                        )}
+                    </div>
+                    {r && !r.na && r.spark && <Sparkline data={r.spark} up={up} />}
                   </div>
-                  <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO, marginTop: 4 }}>{ins.sym}</div>
+                  <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO, marginTop: 6 }}>{ins.sym}</div>
                 </Card>
               );
             })}
@@ -589,6 +638,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
             {INSTRUMENTS.filter((i) => i.g === g).map((ins, idx) => {
               const r = rows[ins.sym];
               const up = r && r.chg != null && r.chg >= 0;
+              if (provider && status === "loading" && !r) return <SkeletonCard key={"sk" + ins.sym} />;
               return (
                 <Card key={ins.sym} onClick={() => provider && setDetail(ins)}
                   className={`rise ${flash[ins.sym] || ""}`}
@@ -602,18 +652,25 @@ function Market({ provider, proxyBase, onSetProxy }) {
                         onClick={(e) => toggleWatch(ins.sym, e)} />
                     </div>
                   </div>
-                  <div style={{ marginTop: 8, fontFamily: MONO }}>
-                    {!provider ? <span style={{ color: C.mut2, fontSize: 12 }}>—</span>
-                      : !r ? <span style={{ color: C.mut2, fontSize: 12 }}>…</span>
-                      : r.na ? <span style={{ color: C.mut2, fontSize: 12 }}>אין נתון זמין</span>
-                      : (
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                          <span style={{ fontSize: 18, color: C.text }}>{r.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                          {r.chg != null && <span style={{ fontSize: 13, color: up ? C.green : C.red }}>{up ? "+" : ""}{r.chg.toFixed(2)}%</span>}
-                        </div>
-                      )}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 8 }}>
+                    <div style={{ fontFamily: MONO }}>
+                      {!provider ? <span style={{ color: C.mut2, fontSize: 12 }}>—</span>
+                        : !r ? <span style={{ color: C.mut2, fontSize: 12 }}>…</span>
+                        : r.na ? <span style={{ color: C.mut2, fontSize: 12 }}>אין נתון זמין</span>
+                        : (
+                          <div>
+                            <div style={{ fontSize: 18, color: C.text }}>{r.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                            {r.chg != null && (
+                              <div style={{ fontSize: 12.5, color: up ? C.green : C.red, display: "flex", alignItems: "center", gap: 3 }}>
+                                <span>{up ? "▲" : "▼"}</span>{up ? "+" : ""}{r.chg.toFixed(2)}%
+                              </div>
+                            )}
+                          </div>
+                        )}
+                    </div>
+                    {r && !r.na && r.spark && <Sparkline data={r.spark} up={up} />}
                   </div>
-                  <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO, marginTop: 4 }}>{ins.sym}</div>
+                  <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO, marginTop: 6 }}>{ins.sym}</div>
                 </Card>
               );
             })}
@@ -1281,7 +1338,10 @@ export default function App() {
         @keyframes breathe{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:.85;transform:scale(1.12)}}
         .glow{animation:breathe 4.5s ease-in-out infinite}
         @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
-        @keyframes revealUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
+        @keyframes revealUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}
+        .skel{background:linear-gradient(90deg,${C.card2} 25%,${C.line} 37%,${C.card2} 63%);background-size:400px 100%;animation:shimmer 1.3s ease-in-out infinite;border-radius:6px}
+        button:active{transform:scale(.96)}`}</style>
 
       {/* top brand bar */}
       <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.lineSoft}`, display: "flex",
