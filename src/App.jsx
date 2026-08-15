@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   LineChart, MessageSquare, Brain, RefreshCw, Plus, ChevronRight, ChevronDown,
   AlertTriangle, ShieldCheck, Target, Layers, Activity, Send, Settings2,
-  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2, Star, Search, Sun, Moon
+  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2, Star, Search, Sun, Moon, ArrowLeftRight
 } from "lucide-react";
 
 /* ============================================================================
@@ -293,6 +293,110 @@ function SkeletonCard() {
   );
 }
 
+/* --- compare two assets: normalized % lines overlaid --- */
+function CompareView({ provider, onClose }) {
+  const [a, setA] = useState("SPY");
+  const [b, setB] = useState("QQQ");
+  const [tfIdx, setTfIdx] = useState(4);
+  const [da, setDa] = useState(null);
+  const [db, setDb] = useState(null);
+  const [status, setStatus] = useState("loading");
+
+  const load = useCallback(async () => {
+    setStatus("loading");
+    const t = TIMEFRAMES[tfIdx];
+    const pull = async (sym) => {
+      const d = await provider.timeSeries(sym, t.iv, t.n);
+      const v = (d.values || []).map((x) => +x.close).filter(isFinite).reverse();
+      if (v.length < 2) return null;
+      return v.map((x) => (x / v[0] - 1) * 100);
+    };
+    try {
+      const [ra, rb] = await Promise.all([pull(a), pull(b)]);
+      setDa(ra); setDb(rb); setStatus(ra && rb ? "ok" : "nodata");
+    } catch (e) { setStatus("error"); }
+  }, [a, b, tfIdx, provider]);
+  useEffect(() => { load(); }, [load]);
+
+  const W = 360, H = 220, pad = 10, padR = 46;
+  let svg = null, legend = null;
+  if (status === "ok" && da && db) {
+    const all = [...da, ...db];
+    const hi = Math.max(...all), lo = Math.min(...all), span = (hi - lo) || 1;
+    const plotW = W - padR, plotH = H - pad * 2;
+    const y = (p) => pad + ((hi - p) / span) * plotH;
+    const line = (arr, col) => {
+      const pts = arr.map((v, i) => `${(i / (arr.length - 1)) * plotW},${y(v)}`).join(" ");
+      return <polyline points={pts} fill="none" stroke={col} strokeWidth="1.6" strokeLinejoin="round" />;
+    };
+    const finA = da[da.length - 1], finB = db[db.length - 1];
+    legend = (
+      <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, fontFamily: MONO, color: C.blue }}>■ {a} {finA >= 0 ? "+" : ""}{finA.toFixed(1)}%</span>
+        <span style={{ fontSize: 13, fontFamily: MONO, color: C.amber }}>■ {b} {finB >= 0 ? "+" : ""}{finB.toFixed(1)}%</span>
+        <span style={{ fontSize: 12, color: C.mut }}>{finA > finB ? `${a} מוביל` : finB > finA ? `${b} מוביל` : "צמוד"}</span>
+      </div>
+    );
+    svg = (
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+        {[0, 0.5, 1].map((f, i) => {
+          const p = hi - f * span, yy = pad + f * plotH;
+          return (
+            <g key={i}>
+              <line x1={0} y1={yy} x2={plotW} y2={yy} stroke={C.lineSoft} strokeWidth="0.5" />
+              <text x={plotW + 4} y={yy + 3} fill={C.mut2} fontSize="8" fontFamily={MONO}>{p >= 0 ? "+" : ""}{p.toFixed(0)}%</text>
+            </g>
+          );
+        })}
+        <line x1={0} y1={y(0)} x2={plotW} y2={y(0)} stroke={C.mut2} strokeWidth="0.5" strokeDasharray="2 2" />
+        {line(da, C.blue)}
+        {line(db, C.amber)}
+      </svg>
+    );
+  }
+
+  const Picker = ({ val, set, color }) => (
+    <select value={val} onChange={(e) => set(e.target.value)} style={{ background: C.card, color, border: `1px solid ${C.line}`,
+      borderRadius: 8, padding: "8px 10px", fontSize: 13, fontFamily: MONO, flex: 1 }}>
+      {INSTRUMENTS.map((i) => <option key={i.sym} value={i.sym} style={{ color: C.text }}>{i.name} ({i.sym})</option>)}
+    </select>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: C.bg, zIndex: 60, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.lineSoft}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>השוואת נכסים</div>
+        <button onClick={onClose} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 8, color: C.mut, cursor: "pointer", padding: 6 }}><X size={18} /></button>
+      </div>
+      <div style={{ padding: 16, flex: 1, overflowY: "auto" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+          <Picker val={a} set={setA} color={C.blueHi} />
+          <ArrowLeftRight size={16} color={C.mut} />
+          <Picker val={b} set={setB} color={C.amber} />
+        </div>
+        <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 8px", minHeight: 200 }}>
+          {status === "loading" && <div style={{ color: C.mut2, fontSize: 13, fontFamily: MONO, textAlign: "center", padding: 60 }}>טוען…</div>}
+          {status === "ok" && svg}
+          {status === "nodata" && <div style={{ color: C.mut2, fontSize: 13, textAlign: "center", padding: 60 }}>אין נתון זמין לאחד הנכסים.</div>}
+          {status === "error" && <div style={{ color: C.amber, fontSize: 13, textAlign: "center", padding: 60 }}>שגיאה בטעינה.</div>}
+        </div>
+        {legend}
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 14 }}>
+          {TIMEFRAMES.map((t, i) => (
+            <button key={t.label} onClick={() => setTfIdx(i)} style={{
+              flex: "0 0 auto", padding: "8px 14px", borderRadius: 8, fontFamily: MONO, fontSize: 13, cursor: "pointer",
+              background: tfIdx === i ? C.blue : "transparent", color: tfIdx === i ? "#fff" : C.mut,
+              border: `1px solid ${tfIdx === i ? C.blue : C.line}` }}>{t.label}</button>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: C.mut2, marginTop: 12, lineHeight: 1.6, fontFamily: MONO }}>
+          שני הנכסים מוצגים כשינוי באחוזים מתחילת התקופה — כך אפשר להשוות ביצועים למרות מחירים שונים.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* --- candlestick detail: real OHLC candles, switchable timeframe, tap a candle --- */
 function CandleDetail({ ins, provider, onClose }) {
   const [tfIdx, setTfIdx] = useState(4); // default: יום
@@ -300,6 +404,13 @@ function CandleDetail({ ins, provider, onClose }) {
   const [status, setStatus] = useState("loading");
   const [err, setErr] = useState("");
   const [sel, setSel] = useState(null);
+  const [mktOpen, setMktOpen] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    provider.quote(ins.sym).then((q) => { if (alive && q && q.is_market_open != null) setMktOpen(!!q.is_market_open); }).catch(() => {});
+    return () => { alive = false; };
+  }, [ins.sym, provider]);
 
   const load = useCallback(async () => {
     setStatus("loading"); setErr(""); setSel(null);
@@ -412,7 +523,15 @@ function CandleDetail({ ins, provider, onClose }) {
         alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{ins.name}</div>
-          <div style={{ fontSize: 11, color: C.mut2, fontFamily: MONO }}>{ins.sym} · Twelve Data</div>
+          <div style={{ fontSize: 11, color: C.mut2, fontFamily: MONO, display: "flex", alignItems: "center", gap: 6 }}>
+            {ins.sym} · Twelve Data
+            {mktOpen != null && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: mktOpen ? C.green : C.mut }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: mktOpen ? C.green : C.mut2, display: "inline-block" }} />
+                {mktOpen ? "שוק פתוח" : "שוק סגור"}
+              </span>
+            )}
+          </div>
         </div>
         <button onClick={onClose} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 8,
           color: C.mut, cursor: "pointer", padding: 6 }}><X size={18} /></button>
@@ -475,6 +594,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
   const prevRef = useRef({});
   const [watch, setWatch] = useState([]);
   const [search, setSearch] = useState("");
+  const [showCompare, setShowCompare] = useState(false);
 
   useEffect(() => { store.get(K.watch).then((w) => { if (w) setWatch(w); }); }, []);
   const toggleWatch = (sym, e) => {
@@ -524,6 +644,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
   return (
     <div style={{ padding: "18px 16px 96px" }}>
       <Header title="השוק" sub="תמונת מצב לשווקים — הבסיס לניתוח של Theo" icon={<LineChart size={18} color={C.blue} />}>
+        <Btn kind="ghost" onClick={() => provider && setShowCompare(true)} disabled={!provider} style={{ padding: "8px 10px" }}><ArrowLeftRight size={16} /></Btn>
         <Btn kind="ghost" onClick={() => setShowKey(true)} style={{ padding: "8px 10px" }}><Settings2 size={16} /></Btn>
         <Btn kind="ghost" onClick={load} disabled={!provider || status === "loading"} style={{ padding: "8px 10px" }}>
           {status === "loading" ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
@@ -701,6 +822,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
       )}
 
       {detail && <CandleDetail ins={detail} provider={provider} onClose={() => setDetail(null)} />}
+      {showCompare && <CompareView provider={provider} onClose={() => setShowCompare(false)} />}
     </div>
   );
 }
