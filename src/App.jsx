@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   LineChart, MessageSquare, Brain, RefreshCw, Plus, ChevronRight, ChevronDown,
   AlertTriangle, ShieldCheck, Target, Layers, Activity, Send, Settings2,
-  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2, Star, Search, Sun, Moon, ArrowLeftRight
+  BookOpen, GitBranch, Beaker, Swords, Sparkles, X, Check, TrendingUp, Loader2, Star, Search, Sun, Moon, ArrowLeftRight, Lightbulb
 } from "lucide-react";
 
 /* ============================================================================
@@ -67,6 +67,7 @@ const K = {
   seen: "thesis:seen",
   watch: "thesis:watch",
   theme: "thesis:theme",
+  tips: "thesis:tips",
 };
 
 /* --------------------------- Anthropic (the AI) --------------------------- */
@@ -226,6 +227,20 @@ const Btn = ({ children, onClick, kind = "ghost", disabled, style }) => {
 const Label = ({ children }) => (
   <div style={{ fontSize: 11, letterSpacing: 1.5, color: C.mut2, fontFamily: MONO, textTransform: "uppercase", marginBottom: 8 }}>{children}</div>
 );
+function Tip({ id, children }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => { store.get(K.tips).then((t) => { if (!t || !t.includes(id)) setShow(true); }); }, [id]);
+  const dismiss = () => { store.get(K.tips).then((t) => store.set(K.tips, [...(t || []), id])); setShow(false); };
+  if (!show) return null;
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: `${C.blue}12`,
+      border: `1px solid ${C.blue}33`, borderRadius: 12, padding: "10px 12px", marginBottom: 14 }}>
+      <Lightbulb size={16} color={C.blueHi} style={{ marginTop: 1, flexShrink: 0 }} />
+      <div style={{ flex: 1, fontSize: 12.5, color: C.text, lineHeight: 1.55 }}>{children}</div>
+      <button onClick={dismiss} style={{ background: "none", border: "none", color: C.mut2, cursor: "pointer", flexShrink: 0 }}><X size={15} /></button>
+    </div>
+  );
+}
 // Signature motif: labeled fact/analysis/assumption/scenario blocks.
 const Facet = ({ tone, label, children }) => {
   const map = { fact: C.teal, analysis: C.blue, assume: C.amber, scenario: C.purple };
@@ -662,6 +677,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
       </div>
 
       {/* search any symbol */}
+      <Tip id="market-cards">לחץ על כל נכס כדי לפתוח גרף מלא ואינטראקטיבי. הכוכב ⭐ מוסיף לרשימת המעקב, וכפתור החצים למעלה משווה בין שני נכסים.</Tip>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: C.card,
           border: `1px solid ${C.line}`, borderRadius: 10, padding: "0 12px" }}>
@@ -763,7 +779,9 @@ function Market({ provider, proxyBase, onSetProxy }) {
               return (
                 <Card key={ins.sym} onClick={() => provider && setDetail(ins)}
                   className={`rise ${flash[ins.sym] || ""}`}
-                  style={{ padding: 12, cursor: provider ? "pointer" : "default", animationDelay: `${idx * 60}ms` }}>
+                  style={{ padding: 12, cursor: provider ? "pointer" : "default", animationDelay: `${idx * 60}ms`,
+                    boxShadow: r && !r.na && r.chg != null ? `0 0 0 1px ${up ? C.green : C.red}22, 0 4px 18px -8px ${up ? C.green : C.red}66` : "none",
+                    borderColor: r && !r.na && r.chg != null ? `${up ? C.green : C.red}33` : C.line }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{ins.name}</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -916,7 +934,18 @@ function Strategy({ profile, setProfile, strategy, setStrategy, versions, setVer
   const [tab, setTab] = useState("build"); // build | profile | test | journal | versions
   return (
     <div style={{ padding: "14px 16px 96px" }}>
-      <Header title="פיתוח השיטה" sub="הלב של THESIS — אתה בונה את השיטה יחד עם Theo." icon={<Brain size={18} color={C.blue} />} />
+      <div style={{ borderRadius: 16, padding: "18px 16px", marginBottom: 14,
+        background: `linear-gradient(135deg, ${C.blue}1f, ${C.purple}14 60%, transparent)`,
+        border: `1px solid ${C.line}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Brain size={20} color={C.blueHi} />
+          <h2 style={{ margin: 0, fontSize: 21, fontWeight: 800, color: C.text }}>פיתוח השיטה</h2>
+        </div>
+        <p style={{ margin: "8px 0 0", fontSize: 13, color: C.mut, lineHeight: 1.6 }}>
+          הלב של THESIS. כאן אתה בונה שיטת השקעה יחד עם Theo — מגדיר מטרות, כללים וניהול סיכון, ואז בודק אותה על נתונים אמיתיים.
+        </p>
+      </div>
+      <Tip id="strategy-flow">התחל בלשונית "פרופיל" (מי אתה כמשקיע), ואז "השיטה" — Theo יבנה איתך טיוטה שתוכל לאתגר, לבדוק ולשפר.</Tip>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "4px 0 12px" }}>
         {[["build", "השיטה", Layers], ["profile", "פרופיל", Target], ["test", "בדיקות", Beaker],
           ["journal", "יומן", BookOpen], ["versions", "גרסאות", GitBranch]].map(([id, lbl, Icon]) => (
@@ -1468,7 +1497,9 @@ export default function App() {
       {/* top brand bar */}
       <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.lineSoft}`, display: "flex",
         alignItems: "center", justifyContent: "space-between", flex: "0 0 auto" }}>
-        <div style={{ fontFamily: MONO, fontSize: 13, letterSpacing: 4, color: C.text }}>THESIS</div>
+        <div style={{ fontFamily: MONO, fontSize: 14, letterSpacing: 5, fontWeight: 700,
+          background: `linear-gradient(90deg, ${C.blueHi}, ${C.purple})`, WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent", backgroundClip: "text" }}>THESIS</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ fontSize: 10, color: C.mut2, fontFamily: MONO }}>build · test · improve</div>
           <button onClick={toggleTheme} title="מצב יום/לילה" style={{ background: "none", border: `1px solid ${C.line}`,
@@ -1493,14 +1524,32 @@ export default function App() {
       </div>
 
       {/* bottom nav — exactly three categories */}
-      <div style={{ flex: "0 0 auto", display: "flex", borderTop: `1px solid ${C.line}`, background: C.bg2 }}>
-        {[["market", "השוק", LineChart], ["chat", "Chat", MessageSquare], ["strategy", "פיתוח השיטה", Brain]].map(([id, lbl, Icon]) => (
-          <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "10px 4px 12px", background: "transparent",
-            border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <Icon size={20} color={tab === id ? C.blue : C.mut2} />
-            <span style={{ fontSize: 11, color: tab === id ? C.text : C.mut2, fontWeight: tab === id ? 700 : 500 }}>{lbl}</span>
-          </button>
-        ))}
+      <div style={{ flex: "0 0 auto", position: "relative", display: "flex",
+        borderTop: `1px solid ${C.line}`,
+        background: theme === "dark" ? "rgba(10,12,17,0.82)" : "rgba(255,255,255,0.82)",
+        backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)",
+        boxShadow: `0 -8px 24px -12px ${C.blue}22` }}>
+        {[["market", "השוק", LineChart], ["chat", "Chat", MessageSquare], ["strategy", "פיתוח השיטה", Brain]].map(([id, lbl, Icon]) => {
+          const active = tab === id;
+          return (
+            <button key={id} onClick={() => setTab(id)} style={{ flex: 1, position: "relative", padding: "12px 4px 14px",
+              background: "transparent", border: "none", cursor: "pointer", display: "flex", flexDirection: "column",
+              alignItems: "center", gap: 5, transition: "all .25s cubic-bezier(.2,.7,.3,1)" }}>
+              {active && (
+                <span style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)",
+                  width: 34, height: 3, borderRadius: 3, background: C.blue, boxShadow: `0 0 12px ${C.blue}` }} />
+              )}
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 30, borderRadius: 10,
+                background: active ? `${C.blue}1c` : "transparent",
+                boxShadow: active ? `0 0 18px -2px ${C.blue}66` : "none",
+                transform: active ? "translateY(-1px) scale(1.05)" : "none", transition: "all .25s cubic-bezier(.2,.7,.3,1)" }}>
+                <Icon size={active ? 21 : 19} color={active ? C.blueHi : C.mut2} strokeWidth={active ? 2.4 : 2} />
+              </span>
+              <span style={{ fontSize: active ? 11.5 : 11, letterSpacing: active ? 0.3 : 0,
+                color: active ? C.text : C.mut2, fontWeight: active ? 700 : 500, transition: "all .25s" }}>{lbl}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
