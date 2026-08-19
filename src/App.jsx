@@ -38,6 +38,50 @@ const THEMES = {
 let C = THEMES.dark; // active palette (swapped at runtime by the theme toggle)
 const MONO = "ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace";
 
+/* Real US equity market hours (NYSE/NASDAQ): Mon–Fri, 09:30–16:00 America/New_York.
+   Computed from the actual New York wall-clock time, so it's correct regardless of the user's timezone.
+   (Does not account for market holidays.) */
+function usMarketStatus(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  const wd = get("weekday");
+  let hh = parseInt(get("hour"), 10); if (hh === 24) hh = 0;
+  const mm = parseInt(get("minute"), 10);
+  const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(wd);
+  const mins = hh * 60 + mm;
+  const open = isWeekday && mins >= 570 && mins < 960; // 9:30 = 570, 16:00 = 960
+  return { open, ny: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} NY` };
+}
+
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
+  const mkt = usMarketStatus(now);
+  const time = now.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const date = now.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+      padding: "10px 14px", marginBottom: 14, borderRadius: 12,
+      background: `linear-gradient(135deg, ${C.blue}14, transparent)`, border: `1px solid ${C.line}` }}>
+      <div>
+        <div style={{ fontFamily: MONO, fontSize: 20, color: C.text, letterSpacing: 1 }}>{time}</div>
+        <div style={{ fontSize: 11.5, color: C.mut, marginTop: 2 }}>{date}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 999,
+        background: mkt.open ? `${C.green}18` : `${C.mut2}18`, border: `1px solid ${mkt.open ? C.green + "55" : C.line}` }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: mkt.open ? C.green : C.mut2,
+          boxShadow: mkt.open ? `0 0 8px ${C.green}` : "none" }} className={mkt.open ? "glow" : ""} />
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: mkt.open ? C.green : C.mut }}>
+          {mkt.open ? "השוק פתוח" : "השוק סגור"}
+        </span>
+        <span style={{ fontSize: 10, color: C.mut2, fontFamily: MONO }}>{mkt.ny}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------- storage ---------------------------------- */
 // window.storage (persists across sessions) with in-memory fallback so the app
 // never crashes if it is unavailable in a given render context.
@@ -419,13 +463,7 @@ function CandleDetail({ ins, provider, onClose }) {
   const [status, setStatus] = useState("loading");
   const [err, setErr] = useState("");
   const [sel, setSel] = useState(null);
-  const [mktOpen, setMktOpen] = useState(null);
-
-  useEffect(() => {
-    let alive = true;
-    provider.quote(ins.sym).then((q) => { if (alive && q && q.is_market_open != null) setMktOpen(!!q.is_market_open); }).catch(() => {});
-    return () => { alive = false; };
-  }, [ins.sym, provider]);
+  const mktOpen = usMarketStatus().open;
 
   const load = useCallback(async () => {
     setStatus("loading"); setErr(""); setSel(null);
@@ -540,12 +578,10 @@ function CandleDetail({ ins, provider, onClose }) {
           <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{ins.name}</div>
           <div style={{ fontSize: 11, color: C.mut2, fontFamily: MONO, display: "flex", alignItems: "center", gap: 6 }}>
             {ins.sym} · Twelve Data
-            {mktOpen != null && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: mktOpen ? C.green : C.mut }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: mktOpen ? C.green : C.mut2, display: "inline-block" }} />
-                {mktOpen ? "שוק פתוח" : "שוק סגור"}
-              </span>
-            )}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: mktOpen ? C.green : C.mut }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: mktOpen ? C.green : C.mut2, display: "inline-block" }} />
+              {mktOpen ? "שוק פתוח" : "שוק סגור"}
+            </span>
           </div>
         </div>
         <button onClick={onClose} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 8,
@@ -677,6 +713,7 @@ function Market({ provider, proxyBase, onSetProxy }) {
       </div>
 
       {/* search any symbol */}
+      <LiveClock />
       <Tip id="market-cards">לחץ על כל נכס כדי לפתוח גרף מלא ואינטראקטיבי. הכוכב ⭐ מוסיף לרשימת המעקב, וכפתור החצים למעלה משווה בין שני נכסים.</Tip>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: C.card,
